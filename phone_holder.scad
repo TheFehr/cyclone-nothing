@@ -31,7 +31,7 @@ use <lib/threads.scad>
 // pivot pin/collar, the two claws, and the leadscrew are separate, unfused
 // bodies (by design -- print-in-place pivot, screw-adjustable clamp), so
 // it isn't watertight/printable as a single part.
-render_part = "connector"; // [connector:Connector plate only — reference/preview only, base.stl already includes this, don't print separately,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses, no collar (print this),collar_top:Pivot collar, top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar, bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center, then glued (print this),clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew, no flange, no knob (print this),knob:Turning knob, glues onto the screw's peg (print this),full:Full assembly (preview only)]
+render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — glues onto the screw's peg (print this),full:Full assembly (preview only)]
 
 /* [Connector] */
 
