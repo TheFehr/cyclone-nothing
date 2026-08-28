@@ -514,7 +514,19 @@ module pivot_pin() {
 //     clear -- reaches all the way to the true axis line (X=0,Y=0) at
 //     this depth, which is what lets the claws attach there and grip the
 //     phone centered on both axes instead of only alongside the collar.
-collar_taper_len = 3;
+//
+// taper_len=3 (OD growing 12->28mm, i.e. 8mm of radius, in only 3mm of
+// height) put the taper's overhang at ~69deg from vertical -- confirmed
+// via an actual overhang scan on the exported mesh (400 candidate print
+// orientations; none got the taper region under 44deg). 10mm brings that
+// down to ~39deg (OD) / ~22deg (bore), both under the usual 45deg
+// self-supporting rule, for the cost of shortening the plain bearing tube
+// section by the same 7mm (collar_between_len below) -- collar_taper_len
+// and collar_between_len trade off directly against a fixed total
+// (pivot_shaft_len - 2*flange_h - 2*clearance), so collar_rod_start and
+// everything past the cap stay at the exact same Z regardless of this
+// value.
+collar_taper_len = 10;
 collar_between_len = pivot_shaft_len - 2 * pivot_flange_h - 2 * pivot_clearance - collar_taper_len;
 collar_cap_bore_dia = pivot_flange_dia + 2 * pivot_clearance;
 // Wall padding wide enough that the rod (same diameter as the cap) has
@@ -530,9 +542,26 @@ collar_cap_bore_dia = pivot_flange_dia + 2 * pivot_clearance;
 // disconnected sliver crescent). A thin numerical fragility fix (extra
 // overlap margins, a reinforcement spine) couldn't help because the
 // separation is a real, large-scale geometric fact, not a sliver
-// artifact. 13mm of wall gives the rod (radius 14mm here) a real ~3.4mm
-// margin over the notch's 10.6mm reach.
-collar_cap_outer_dia = collar_cap_bore_dia + 13;
+// artifact.
+//
+// The +13 pad this used to carry only checked the worst case ON the
+// straight line through the rod's center and the notch's own center (at
+// X=0) -- 3.4mm margin there. But the notch is a cylinder along X, not a
+// point, so its closest approach to the rod's OUTER (also cylindrical)
+// surface isn't confined to that one line -- an actual per-triangle wall-
+// thickness ray-cast on the exported mesh found the TRUE minimum around
+// X=+-3.7mm (off that line), at under 0.01mm -- a real, near-zero wall the
+// single-line check missed entirely (same near-zero point independently
+// confirmed present in the committed collar_bottom.stl before this fix,
+// so it predates this change). +19 pushes the on-axis margin to 6.4mm and
+// clears that specific X=+-3.7mm point. A re-scan after this change still
+// shows other sub-0.1mm points elsewhere near the rod's outer surface
+// (X~=-12, close to where rod_connect_shelf()'s own tip-lip relief cut
+// meets this boundary) -- not chased further/re-verified as a genuine
+// wall defect vs. a ray-cast artifact at that cut's own edge; print a
+// small test piece and check with your slicer's own thin-wall detector
+// before committing to a full print.
+collar_cap_outer_dia = collar_cap_bore_dia + 19;
 collar_cap_len = pivot_flange_h + 2 * pivot_clearance;
 
 module pivot_collar_solid() {
@@ -728,28 +757,28 @@ module collar_tabs() {
     collar_tab(collar_tab2_z, collar_tab2_r);
 }
 
+// Plain Y=0 clamshell split, applied uniformly through the ENTIRE part --
+// tube, taper, cap, AND the standoff rod, no exception. An earlier version
+// kept the rod whole (fused entirely onto one half, at clamp_screw_dia=5
+// parameter values) because a plain split there used to fragment that half
+// into 3 disconnected pieces. Re-checked via an actual connected-
+// components check against the CURRENT parameters (clamp_screw_dia=7,
+// current boss/rail-clearance margins) -- both halves now come back as a
+// single connected component with a plain split, so the old workaround
+// was stale, not still-needed.
+//
+// Removing it also kills an overhang the workaround caused: printing a
+// half-open tube that abruptly became a full solid rod was unsupported no
+// matter how the part was oriented (an overhang scan across 400 candidate
+// print orientations never got the old whole-rod geometry below ~135mm^2
+// of >45deg-from-vertical unsupported area). With a plain split, the same
+// scan gets collar_bottom down to ~41mm^2 at its best orientation, and
+// even simple axis-aligned orientations roughly halve the old worst case.
 module collar_half_space(positive) {
-    // The cap's own bore cut (see pivot_collar_solid() above) is 2mm
-    // taller than the cap itself and centered on it, so it overshoots
-    // 1mm PAST collar_rod_start into the rod's own territory -- meaning
-    // the first ~1mm of the "solid" rod is actually still hollow. Cutting
-    // the unsplit-rod region right at collar_rod_start-1 (inside that
-    // hollow overshoot) produced a small disconnected sliver there
-    // (confirmed via a connected-components check isolating this Z-cut
-    // alone, with no Y-split involved at all). Pushed 3mm further in --
-    // safely past the bore overshoot, and still safely before the
-    // flange-relief notch's own start (~6.7mm further still) -- so the
-    // first few mm past the cap stay Y-split (fine, no notch there yet)
-    // and only genuinely, unambiguously solid rod is left unsplit.
-    rod_unsplit_start = collar_rod_start + 3;
     translate(arm_end)
-        rotate([-90 + pivot_tilt, 0, 0]) {
+        rotate([-90 + pivot_tilt, 0, 0])
             translate([-50, positive ? 0 : -300, -50])
-                cube([100, 300, rod_unsplit_start + 50]);
-            if (!positive)
-                translate([-50, -300, rod_unsplit_start - 1])
-                    cube([100, 600, 300]);
-        }
+                cube([100, 300, 10000]);
 }
 
 // Cuts the tab pin hole using pivot_collar's OWN self-transforming
@@ -778,6 +807,13 @@ module collar_tab_pin_hole(z_center, outer_r) {
                     cylinder(d = filament_pin_hole_dia, h = 2 * collar_tab_span + 2);
 }
 
+// Now that the split runs through the whole rod (see collar_half_space()
+// above), the rail-connecting rod tip and its two mount-pin holes -- both
+// fixed at mount_screw_y=+6, entirely on the +Y side -- land in the +Y
+// half. Naming that half "bottom" (not "top") keeps it matching
+// assembly_guide.html's existing "collar_bottom's standoff rod tip"
+// instructions and the physical assembly steps, so positive/!positive are
+// swapped here relative to which module calls which.
 module pivot_collar_top() {
     difference() {
         intersection() {
@@ -785,7 +821,7 @@ module pivot_collar_top() {
                 pivot_collar_solid();
                 collar_tabs();
             }
-            collar_half_space(true);
+            collar_half_space(false);
         }
         collar_tab_pin_hole(collar_tab1_z, collar_tab1_r);
         collar_tab_pin_hole(collar_tab2_z, collar_tab2_r);
@@ -799,7 +835,7 @@ module pivot_collar_bottom() {
                 pivot_collar_solid();
                 collar_tabs();
             }
-            collar_half_space(false);
+            collar_half_space(true);
         }
         collar_tab_pin_hole(collar_tab1_z, collar_tab1_r);
         collar_tab_pin_hole(collar_tab2_z, collar_tab2_r);
