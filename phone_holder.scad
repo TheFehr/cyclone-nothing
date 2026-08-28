@@ -31,7 +31,7 @@ use <lib/threads.scad>
 // pivot pin/collar, the two claws, and the leadscrew are separate, unfused
 // bodies (by design -- print-in-place pivot, screw-adjustable clamp), so
 // it isn't watertight/printable as a single part.
-render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — glues onto the screw's peg (print this),full:Full assembly (preview only)]
+render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),TEST_flange_fit:Quick fit test — flange_nut + a short thread stub — print this first to check thread_tolerance before the full screw,clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — glues onto the screw's peg (print this),full:Full assembly (preview only)]
 
 /* [Connector] */
 
@@ -1148,7 +1148,19 @@ module dual_thread_screw() {
 // flip inside a single nut, which is not physically buildable) and gets
 // glued in place afterward so it can't work itself loose.
 module flange_nut() {
-    ScrewHole(clamp_screw_dia, flange_nut_thickness + 1, position = [0, 0, -0.5], rotation = [0, 0, 0], pitch = clamp_screw_pitch, tooth_angle = 30)
+    // tolerance = thread_tolerance -- was missing here entirely, silently
+    // falling back to threads.scad's own library default (0.4mm) instead
+    // of thread_tolerance (0.8mm, see above), which every OTHER threaded
+    // cut on this same clamp_screw_dia/pitch (the claws) already passes
+    // explicitly. NOTE: thread_tolerance=0.8 itself was bumped up after a
+    // real print issue, but that issue was the screw seizing in the plain
+    // bearing-boss bore (bearing_clearance, a smooth-shaft fit, not a
+    // thread) -- no value here has actually been print-verified for THIS
+    // thread's own engagement specifically. This fix at minimum makes
+    // flange_nut() consistent with the claws instead of silently using
+    // half their clearance; still worth a small test print before
+    // committing to a full reprint, same as any other tolerance change.
+    ScrewHole(clamp_screw_dia, flange_nut_thickness + 1, position = [0, 0, -0.5], rotation = [0, 0, 0], pitch = clamp_screw_pitch, tooth_angle = 30, tolerance = thread_tolerance)
         cylinder(d = center_flange_dia, h = flange_nut_thickness, $fn = 48);
 }
 
@@ -1237,6 +1249,16 @@ else if (render_part == "clamp_claw_left") clamp_claw_left();
 else if (render_part == "screw") in_pivot_frame() dual_thread_screw();
 else if (render_part == "knob") knob();
 else if (render_part == "flange_nut") flange_nut();
+else if (render_part == "TEST_flange_fit") {
+    // Fast fit test for the thread_tolerance fix on flange_nut() -- a
+    // short right-hand thread stub (10 pitches, plenty to test engagement)
+    // instead of the full ~61k-facet leadscrew, plus flange_nut() itself,
+    // side by side on one small plate. Both print in their natural
+    // orientation (axis vertical), no supports needed.
+    flange_nut();
+    translate([20, 0, 0])
+        ScrewThread(clamp_screw_dia, 10 * clamp_screw_pitch, pitch = clamp_screw_pitch, tooth_angle = 30);
+}
 else {
     base_assembly();
     color("SteelBlue") clamp_center_assembly();
