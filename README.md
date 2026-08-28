@@ -8,7 +8,7 @@ Parametric 3D-printable phone holder that mounts a Nothing Phone 2 onto a GameSi
 ## What it does
 
 - Snap-fit connector plate slides into the controller's own USB-C accessory port — no glue, no screws, reverse-engineered from a real controller.
-- A tilted arm carries a print-in-place swivel pivot, so the clamp rotates 90° between portrait (handheld console emulation) and landscape (PC-streaming) orientations without removing the phone.
+- A tilted arm carries a print-in-place swivel pivot, so the clamp rotates 90° between portrait (handheld console emulation) and landscape (x64 emulation — also works for PC streaming) orientations without removing the phone.
 - The clamp is a screw-adjustable, car-mount-style claw grip on the phone's short edges — screen and back stay fully exposed. A dual-handed printed leadscrew draws both claws in together and keeps the phone centered at any width.
 - **No metal anywhere.** Every joint is either a real printed helical thread or a plain friction-fit pin cut from your own printer filament, glued in place. No screws, nuts, or hardware to source.
 
