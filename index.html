@@ -82,27 +82,177 @@
 </main>
 
 <script type="module">
-  import { OpenScadPreview } from 'https://cdn.jsdelivr.net/npm/openscad-customizer-web@0.3.0/dist/index.js';
+  import * as THREE from 'three';
+  import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+  import {
+    parseCustomizer, buildForm, Viewer, offToTrianglePositions, downloadStl,
+  } from 'https://cdn.jsdelivr.net/npm/openscad-customizer-web@0.3.0/dist/index.js';
+
+  // Hand-rolled orchestration (the library's building blocks, not the
+  // OpenScadPreview all-in-one class) specifically to support loading a
+  // pre-rendered STL instead of a live WASM render -- see PREGEN_PARTS
+  // below. OpenScadPreview always posts straight to the worker with no
+  // hook to substitute a static file, so this project uses the same
+  // lower-level pattern as ttrpg-prints' per-design preview pages.
+  const SCAD_URL = './phone_holder.scad';
+  const WORKER_URL = new URL('./worker-shim.js', import.meta.url);
+  const FILES = [{ url: './lib/threads.scad', fsPath: '/lib/threads.scad' }];
+
+  // The 9 real print jobs, each with a pre-rendered STL committed in stl/,
+  // kept in sync by hand whenever a verified design change lands (see the
+  // repo's commit history). Matches phone_holder.scad's render_part
+  // Customizer options that are actually meant to be printed -- excludes
+  // "connector" (redundant, base.stl already includes it) and "full"
+  // (assembly preview only, not a printable part).
+  const PREGEN_PARTS = new Set([
+    'base', 'clamp_center', 'collar_top', 'collar_bottom', 'flange_nut',
+    'clamp_claw_right', 'clamp_claw_left', 'screw', 'knob',
+  ]);
 
   const debugOn = new URLSearchParams(location.search).has('debug');
   if (debugOn) document.body.classList.add('debug');
   const debugEl = document.getElementById('debug');
+  function dbg(text) {
+    if (!debugOn) return;
+    debugEl.textContent += text + '\n';
+    debugEl.scrollTop = debugEl.scrollHeight;
+  }
 
-  new OpenScadPreview({
+  const statusEl = document.getElementById('status');
+  const dlBtn = document.getElementById('btn-download');
+  function setStatus(text, cls = '') { statusEl.textContent = text; statusEl.className = cls; }
+
+  const viewer = new Viewer({
     canvas: document.getElementById('preview'),
-    controlsEl: document.getElementById('controls'),
-    statusEl: document.getElementById('status'),
-    downloadBtn: document.getElementById('btn-download'),
-    scadUrl: './phone_holder.scad',
-    workerUrl: new URL('./worker-shim.js', import.meta.url),
-    files: [{ url: './lib/threads.scad', fsPath: '/lib/threads.scad' }],
-    storageKey: 'phone-holder-preview-params',
     bedSize: 220,
-    downloadName: () => 'phone-holder',
-    onLog: debugOn ? (text) => {
-      debugEl.textContent += text + '\n';
-      debugEl.scrollTop = debugEl.scrollHeight;
-    } : undefined,
+  });
+
+  // Current form matches the schema's own defaults for every field except
+  // render_part, and render_part names one of the 9 pregen files -> use it
+  // and skip the WASM worker entirely. Any deviation (render_part set to
+  // "connector"/"full", or any OTHER parameter edited away from default)
+  // falls back to a real live render, same as before this change.
+  function pregenPath(values) {
+    if (!schema || !PREGEN_PARTS.has(values.render_part)) return null;
+    for (const key of Object.keys(schema.defaults)) {
+      if (key === 'render_part') continue;
+      if (values[key] !== schema.defaults[key]) return null;
+    }
+    return `./stl/${values.render_part}.stl`;
+  }
+
+  async function loadPregenObject(url) {
+    const geometry = await new STLLoader().loadAsync(url);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({ color: 0x4c8bf5, roughness: 0.45, metalness: 0.05 });
+    const mesh = new THREE.Mesh(geometry, material);
+    // Matches Viewer.loadParts()'s own OFF->mesh conversion, which applies
+    // this same rotation internally -- without it, switching between a
+    // pregen part and a live-rendered one would flip orientation relative
+    // to the bed grid (OpenSCAD/STL is Z-up, the viewer displays Y-up).
+    mesh.rotation.x = -Math.PI / 2;
+    viewer.presentObject(mesh);
+  }
+
+  let schema = null;
+  let form = null;
+
+  const worker = new Worker(WORKER_URL, { type: 'module' });
+  worker.onerror = (e) => {
+    dbg('WORKER ERROR: ' + (e.message || JSON.stringify(e)));
+    setStatus('Worker error — see debug log', 'error');
+  };
+
+  let lastModel = null; // { pregenUrl, values } or { parts, values }
+  let renderTimer = null;
+  let rendering = false;
+  let pendingRender = false;
+
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'result') {
+      lastModel = { parts: data.parts, values: form ? form.getValues() : schema.defaults };
+      dlBtn.disabled = data.parts.length === 0;
+      viewer.loadParts(data.parts);
+      setStatus('Ready — drag to rotate, scroll to zoom', 'ok');
+      finishRender();
+    } else if (data.type === 'error') {
+      dbg('[error] ' + data.message);
+      setStatus('Error: ' + data.message, 'error');
+      finishRender();
+    } else if (data.type === 'log') {
+      dbg(data.text);
+    }
+  };
+
+  function finishRender() {
+    rendering = false;
+    if (pendingRender) { pendingRender = false; scheduleRender(); }
+  }
+
+  function triggerRender() {
+    if (!schema) return;
+    if (rendering) { pendingRender = true; return; }
+    rendering = true;
+
+    const values = form ? form.getValues() : schema.defaults;
+    const pregen = pregenPath(values);
+
+    if (pregen) {
+      setStatus(`Loading ${values.render_part}.stl (pre-rendered)…`, 'busy');
+      loadPregenObject(pregen)
+        .then(() => {
+          lastModel = { pregenUrl: pregen, values };
+          dlBtn.disabled = false;
+          setStatus('Ready — drag to rotate, scroll to zoom', 'ok');
+        })
+        .catch((err) => {
+          dbg('[pregen] ' + (err.message || err));
+          setStatus('Pregen load failed: ' + (err.message || err), 'error');
+        })
+        .finally(finishRender);
+      return;
+    }
+
+    setStatus('Rendering… (loading OpenSCAD WASM first time, ~14 MB, cached after)', 'busy');
+    worker.postMessage({
+      type: 'render',
+      entryUrl: new URL(SCAD_URL, document.baseURI).href,
+      files: FILES.map((f) => ({ ...f, url: new URL(f.url, document.baseURI).href })),
+      values,
+    });
+  }
+
+  function scheduleRender() {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(triggerRender, 400);
+  }
+
+  // Pregen hits: download the static file directly, no reconstruction.
+  dlBtn.addEventListener('click', () => {
+    if (!lastModel) return;
+    if (lastModel.pregenUrl) {
+      const a = Object.assign(document.createElement('a'), {
+        href: lastModel.pregenUrl,
+        download: lastModel.pregenUrl.split('/').pop(),
+      });
+      a.click();
+      return;
+    }
+    const base = 'phone-holder-' + (lastModel.values?.render_part ?? 'model');
+    if (lastModel.parts.length === 1) {
+      const positions = offToTrianglePositions(lastModel.parts[0].off);
+      if (positions?.length) downloadStl(positions, `${base}.stl`);
+    }
+  });
+
+  setStatus('Loading…', 'busy');
+  fetch(SCAD_URL).then((r) => r.text()).then((source) => {
+    schema = parseCustomizer(source);
+    form = buildForm(document.getElementById('controls'), schema, {
+      storageKey: 'phone-holder-preview-params',
+      onChange: () => scheduleRender(),
+    });
+    triggerRender();
   });
 </script>
 
