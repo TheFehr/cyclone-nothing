@@ -1,1 +1,13 @@
 scratch/
+
+# OpenSCAD transient render outputs (not the curated exports in stl/)
+*.csg
+*.echo
+*.ast
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
