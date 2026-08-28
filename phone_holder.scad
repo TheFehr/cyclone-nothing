@@ -1125,15 +1125,31 @@ peg_len = 4;
 // ideal model is too tight to trust against real print tolerance.
 peg_z0 = half_len + 2;
 
-// No integral center flange -- see flange_nut() below for why. The
-// right- and left-hand threads simply meet at X=0.
+// The handedness transition (where left-hand thread ends and right-hand
+// thread begins) sits PAST X=0 by this much, not exactly at X=0 --
+// see flange_nut() below for why: it needs the ENTIRE zone it seats in
+// to be left-hand thread, not just up to the geometric center. +0.5mm
+// past the flange's own half-thickness so its far edge doesn't land
+// exactly on the handedness seam.
+flange_seat_x = flange_nut_thickness / 2 + 0.5;
+
+// No integral center flange -- see flange_nut() below for why.
 module dual_thread_screw() {
     translate([0, screw_y, screw_z])
         rotate([0, 90, 0]) {
-            ScrewThread(clamp_screw_dia, half_len, pitch = clamp_screw_pitch, tooth_angle = 30);
+            // Right-hand thread: flange_seat_x to half_len (shortened on
+            // its center-side end -- see flange_seat_x above).
+            translate([0, 0, flange_seat_x])
+                ScrewThread(clamp_screw_dia, half_len - flange_seat_x, pitch = clamp_screw_pitch, tooth_angle = 30);
+            // Left-hand thread: -half_len to flange_seat_x (extended PAST
+            // the geometric center, instead of stopping at X=0 -- so the
+            // flange's entire seating zone is covered by matching
+            // (left-hand) thread. Covered elsewhere: the claws only ever
+            // operate near +-half_len, nowhere near this small central
+            // shift, so this doesn't touch their own engagement range.
             mirror([1, 0, 0])
                 translate([0, 0, -half_len])
-                    ScrewThread(clamp_screw_dia, half_len, pitch = clamp_screw_pitch, tooth_angle = 30);
+                    ScrewThread(clamp_screw_dia, half_len + flange_seat_x, pitch = clamp_screw_pitch, tooth_angle = 30);
             // Plain stub bridging the thread's end to the peg -- without
             // it the peg is a floating, disconnected fragment (the 2mm
             // clearance margin above is empty space, not material).
@@ -1147,34 +1163,43 @@ module dual_thread_screw() {
 // The screw's retention flange, separate and threaded on AFTER the bare
 // screw is already in place, then glued -- not molded onto the screw.
 // A flange wide enough to be captured between two bosses (12mm) can
-// never fit through EITHER boss's own ~6mm bore, so a screw with an
+// never fit through EITHER boss's own ~8mm bore, so a screw with an
 // integral flange can only ever be inserted from whichever end doesn't
 // have a boss yet -- which was the whole reason for making one boss a
-// separate, removable boss_cap() part in the first design pass. The
-// user pointed out a simpler fix: keep BOTH bosses fixed (like the very
-// first version of this design, before boss_cap existed at all), make
-// the screw a plain flangeless shaft (slides freely through either
-// fixed bore, nothing to catch on), and screw this nut onto the screw's
-// own thread from inside the gap between the bosses -- accessible
-// precisely because there's no boss material AT the gap -- once the
-// screw's center is already sitting there. Threads onto the RIGHT-hand
-// half only (not straddling X=0, where the handedness would have to
-// flip inside a single nut, which is not physically buildable) and gets
-// glued in place afterward so it can't work itself loose.
+// separate, removable boss_cap() part in the first design pass. Both
+// bosses stay fixed instead (like the very first version of this design,
+// before boss_cap existed at all) -- neither one ever needs to pass
+// anything wider than the plain screw shaft.
+//
+// LEFT-handed, not right -- this is the second iteration of this joint,
+// and the first one (right-handed, matching the geometric right-hand
+// thread half) was a real, physically-impossible design, caught by the
+// user: a closed ring nut can only get onto a one-piece continuous shaft
+// by threading in from a genuinely free end and traveling along it.
+// Neither of the screw's two actual free ends works for a right-handed
+// nut -- the far left-hand tip is the wrong handedness (won't catch at
+// all), and the peg end is blocked outright (round bore vs. a nut sized
+// for the thread's OD, plus the peg itself). There is no free end
+// anywhere near where the flange actually needs to sit.
+//
+// The fix (the user's own): make the flange LEFT-handed instead, and
+// extend the left-hand thread past center (flange_seat_x above) so the
+// flange's entire seating zone is left-hand territory. Real assembly
+// motion: insert the bare screw's left-hand tip into the boss on that
+// side and feed it in; the moment left-hand thread starts emerging into
+// the gap, hold the flange there and it catches immediately (correct
+// handedness from the very first thread, not just once some far-off
+// transition point eventually arrives) and climbs the last few mm to its
+// seat as more thread emerges -- the FLANGE barely moves at all, it's
+// the SCREW that does the ~170mm of traveling, through the boss bore
+// (always narrower than the flange) the whole time, never the flange
+// itself. Glued in place afterward so it can't work itself loose.
+// Whether the *rest* of the screw (now right-hand thread, past the seam)
+// continues to feed cleanly past the already-seated flange, or needs a
+// bit of force, hasn't been physically confirmed -- test with the small
+// piece first, same as any other tolerance-sensitive fit here.
 module flange_nut() {
-    // tolerance = thread_tolerance -- was missing here entirely, silently
-    // falling back to threads.scad's own library default (0.4mm) instead
-    // of thread_tolerance (0.8mm, see above), which every OTHER threaded
-    // cut on this same clamp_screw_dia/pitch (the claws) already passes
-    // explicitly. NOTE: thread_tolerance=0.8 itself was bumped up after a
-    // real print issue, but that issue was the screw seizing in the plain
-    // bearing-boss bore (bearing_clearance, a smooth-shaft fit, not a
-    // thread) -- no value here has actually been print-verified for THIS
-    // thread's own engagement specifically. This fix at minimum makes
-    // flange_nut() consistent with the claws instead of silently using
-    // half their clearance; still worth a small test print before
-    // committing to a full reprint, same as any other tolerance change.
-    ScrewHole(clamp_screw_dia, flange_nut_thickness + 1, position = [0, 0, -0.5], rotation = [0, 0, 0], pitch = clamp_screw_pitch, tooth_angle = 30, tolerance = thread_tolerance)
+    ScrewHoleMirrored(clamp_screw_dia, flange_nut_thickness + 1, position = [0, 0, -0.5], rotation = [0, 0, 0], pitch = clamp_screw_pitch, tooth_angle = 30, tolerance = thread_tolerance)
         cylinder(d = center_flange_dia, h = flange_nut_thickness, $fn = 48);
 }
 
@@ -1264,14 +1289,17 @@ else if (render_part == "screw") in_pivot_frame() dual_thread_screw();
 else if (render_part == "knob") knob();
 else if (render_part == "flange_nut") flange_nut();
 else if (render_part == "TEST_flange_fit") {
-    // Fast fit test for the thread_tolerance fix on flange_nut() -- a
-    // short right-hand thread stub (10 pitches, plenty to test engagement)
-    // instead of the full ~61k-facet leadscrew, plus flange_nut() itself,
-    // side by side on one small plate. Both print in their natural
-    // orientation (axis vertical), no supports needed.
+    // Fast fit test for flange_nut() -- a short LEFT-hand thread stub (10
+    // pitches, matching flange_nut()'s own handedness -- see flange_nut()
+    // above) instead of the full ~61k-facet leadscrew, plus flange_nut()
+    // itself, side by side on one small plate. Both print in their
+    // natural orientation (axis vertical), no supports needed. Thread it
+    // on from either end of this stub -- both ends are open here, unlike
+    // the real screw where only the correct end works.
     flange_nut();
     translate([20, 0, 0])
-        ScrewThread(clamp_screw_dia, 10 * clamp_screw_pitch, pitch = clamp_screw_pitch, tooth_angle = 30);
+        mirror([1, 0, 0])
+            ScrewThread(clamp_screw_dia, 10 * clamp_screw_pitch, pitch = clamp_screw_pitch, tooth_angle = 30);
 }
 else {
     base_assembly();
