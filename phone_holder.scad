@@ -1081,6 +1081,20 @@ module ScrewHoleMirrored(outer_diam, height, position = [0, 0, 0], rotation = [0
 // The screw itself: right-handed from center to +half_len, left-handed
 // (mirrored) from center to -half_len, plus the center retention flange.
 half_len = rail_length / 2 - 2;
+// Total screw length ends up roughly 2*half_len (~171mm at the default
+// rail_length=175) at only clamp_screw_dia diameter -- print this LYING
+// FLAT on the bed, not standing on its own tip. At that aspect ratio
+// (~25:1) a vertical print isn't just tall, it's unreliably thin/tall
+// for FDM: vibration, poor bed contact area, likely to topple or warp
+// long before it'd finish. TEST_flange_fit's own thread stub prints
+// vertically fine (it's only ~20mm) -- that's a convenience for a short
+// test piece, not guidance for this part. Printing flat means each
+// layer only catches a thin slice of the helical thread's circular
+// cross-section instead of a clean ring, so the thread comes out
+// slightly stair-stepped rather than smooth -- normal and generally
+// fine functionally at this pitch/tooth_angle, just not as clean as a
+// vertical print would be if the part weren't too long/thin for one.
+// (Engineering judgment, not a print-tested claim either way.)
 
 // Anti-rotation peg for the knob, at the +X tip -- NOT a knurled knob
 // fused directly onto the screw. The right claw threads onto this same
