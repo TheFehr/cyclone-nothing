@@ -1143,12 +1143,25 @@ half_len = rail_length / 2 - 2;
 // The knob prints as its own separate part (see knob() below) and is
 // glued onto this peg AFTER both claws are threaded on. Square, not
 // round, so the glued joint actually transmits turning torque instead
-// of relying on glue shear alone. Sized to fit within the thread's own
-// ~5mm envelope (peg diagonal 5.66mm > 5mm crest -- close enough that
-// the small corner overhang is cosmetic, not a real discontinuity;
-// confirmed connected via the same connected-components check used
-// throughout this project) so there's no unsupported step at the seam.
-peg_size = 4;
+// of relying on glue shear alone.
+//
+// peg_size=4 (diagonal 5.66mm) used to be waved through as "close enough,
+// cosmetic" against the thread's ~5mm envelope -- but that was checked
+// with a connected-components check on the STATIC, already-assembled
+// model, which only proves the meshes are watertight where they touch; it
+// says nothing about whether the peg can actually be SLID through the
+// claw's threaded bore to get there. It can't: the claw's own internal
+// thread (cut by ScrewHole()'s cutter -- outer_diam=1.01*clamp_screw_dia+
+// 1.25*thread_tolerance, tooth_height=clamp_screw_pitch, tooth_angle=30)
+// has a minor diameter of ~4.61mm, half a mm narrower than the peg's own
+// 5.66mm diagonal -- confirmed via an actual difference()-against-the-
+// real-cutter check swept across a full pitch of phase, real (1100+
+// facet) leftover material at every single phase tested, not a
+// borderline sliver. The right claw could never be threaded on at all.
+// 2.5mm (diagonal 3.54mm) clears the same 4.61mm minor diameter with real
+// margin at every phase, re-checked the same way -- small enough to also
+// leave slack for FDM's usual undersized-hole/oversized-shaft skew.
+peg_size = 2.5;
 peg_len = 4;
 // 2mm margin past half_len before the peg starts, purely for print
 // tolerance -- the slider's own max travel (x0 = half_len - slider_len,
