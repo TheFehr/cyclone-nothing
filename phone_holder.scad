@@ -31,7 +31,7 @@ use <lib/threads.scad>
 // pivot pin/collar, the two claws, and the leadscrew are separate, unfused
 // bodies (by design -- print-in-place pivot, screw-adjustable clamp), so
 // it isn't watertight/printable as a single part.
-render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),TEST_flange_fit:Quick fit test — flange_nut + a short thread stub — print this first to check thread_tolerance before the full screw,clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — glues onto the screw's peg (print this),full:Full assembly (preview only)]
+render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),TEST_flange_fit:Quick fit test — flange_nut + a short thread stub — print this first to check thread_tolerance before the full screw,clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — threads onto the screw's tip, then glued (print this),full:Full assembly (preview only)]
 
 /* [Connector] */
 
@@ -1132,47 +1132,48 @@ half_len = rail_length / 2 - 2;
 // vertical print would be if the part weren't too long/thin for one.
 // (Engineering judgment, not a print-tested claim either way.)
 
-// Anti-rotation peg for the knob, at the +X tip -- NOT a knurled knob
-// fused directly onto the screw. The right claw threads onto this same
-// +X section by rotating on from the open tip, moving inward toward the
-// (already-captured) center flange; a knob fused right at that tip would
-// permanently block it (verified: the right claw's thread bore is wider
-// than the shaft but narrower than knob_dia, so it can never pass a
-// fused knob, and the flange end is already blocked by the bearing
-// bosses -- there'd be no way to get the claw onto the screw at all).
-// The knob prints as its own separate part (see knob() below) and is
-// glued onto this peg AFTER both claws are threaded on. Square, not
-// round, so the glued joint actually transmits turning torque instead
-// of relying on glue shear alone.
+// The knob threads onto the +X tip like a real nut (see knob() below) --
+// NOT a knurled knob fused directly onto the screw, and NOT glued onto a
+// plain anti-rotation peg either (an earlier version of this fix). Both
+// of those put something wider than the claw's own threaded bore in the
+// claw's way: the right claw threads onto this same +X section by
+// rotating on from the open tip, moving inward toward the (already-
+// captured) center flange, and ANYTHING that isn't itself matching,
+// continuous right-hand thread along that whole path is a real
+// obstruction, not just a tight fit -- a claw's internal thread ridge
+// only has clearance to trace a helix that's ALREADY there (the screw's
+// own groove, cut with the same pitch/handedness); it can't slide past a
+// plain peg OR a plain stub of ANY size close to clamp_screw_dia, since
+// neither has a matching groove for the ridge to follow. Confirmed via an
+// actual difference()-against-the-real-cutter check, swept across a full
+// pitch of phase: a plain clamp_screw_dia stub left real (2000+ facet)
+// leftover material at every phase, same as a peg did -- not a borderline
+// sliver either way, and not fixable by shrinking a peg alone, since a
+// PLAIN stub of the shaft's own diameter is just as much an obstruction
+// as an oversized peg was (an earlier fix that only shrank the peg missed
+// this -- the right claw still could not have gone on).
 //
-// peg_size=4 (diagonal 5.66mm) used to be waved through as "close enough,
-// cosmetic" against the thread's ~5mm envelope -- but that was checked
-// with a connected-components check on the STATIC, already-assembled
-// model, which only proves the meshes are watertight where they touch; it
-// says nothing about whether the peg can actually be SLID through the
-// claw's threaded bore to get there. It can't: the claw's own internal
-// thread (cut by ScrewHole()'s cutter -- outer_diam=1.01*clamp_screw_dia+
-// 1.25*thread_tolerance, tooth_height=clamp_screw_pitch, tooth_angle=30)
-// has a minor diameter of ~4.61mm, half a mm narrower than the peg's own
-// 5.66mm diagonal -- confirmed via an actual difference()-against-the-
-// real-cutter check swept across a full pitch of phase, real (1100+
-// facet) leftover material at every single phase tested, not a
-// borderline sliver. The right claw could never be threaded on at all.
-// 2.5mm (diagonal 3.54mm) clears the same 4.61mm minor diameter with real
-// margin at every phase, re-checked the same way -- small enough to also
-// leave slack for FDM's usual undersized-hole/oversized-shaft skew.
-peg_size = 2.5;
-peg_len = 4;
-// 2mm margin past half_len before the peg starts, purely for print
-// tolerance -- the slider's own max travel (x0 = half_len - slider_len,
-// keeping its full thread engagement inside [0, half_len]) already lands
-// exactly at half_len with zero overlap against a peg placed right at
-// half_len (confirmed via an intersection() check against claw() at that
-// worst-case position, including the claw's wall -- the screw sits at
-// screw_z, offset behind the claw's own Z-center, which is what keeps
-// the wall clear even at max extension), but zero clearance in the
-// ideal model is too tight to trust against real print tolerance.
-peg_z0 = half_len + 2;
+// The actual fix: no separate anti-rotation feature at all. Run the
+// right-hand thread continuously all the way past the claw's own resting
+// position, and cut the knob's own socket as REAL matching thread (see
+// knob() below) instead of a peg-and-socket glue joint -- the SAME
+// technique clamp_claw_right() already uses successfully on this exact
+// thread. The knob threads on AFTER the claw (nothing further out to
+// block it at that point) and is glued once seated. A full helical
+// thread engagement across the knob's own knob_h gives far more torque
+// capacity than any peg's cross-section could, especially one narrow
+// enough to have passed through the claw's ~4.6mm thread bore in the
+// first place.
+//
+// Needs to reach past the right claw's own OUTWARD reach (its wall's far
+// edge, at claw_offset-slider_len/2+claw_width -- see claw()), not just
+// past its slider -- otherwise the knob would be threading on before
+// fully clearing the claw's wall. knob_h of clean thread past that edge
+// (plus a 1mm print-tolerance margin, same margin the old peg used) gives
+// the knob's own full body real thread underneath it once fully seated
+// flush against the claw.
+right_claw_outer_x = claw_offset - slider_len / 2 + claw_width;
+right_thread_end_x = right_claw_outer_x + knob_h + 1;
 
 // The handedness transition (where left-hand thread ends and right-hand
 // thread begins) sits PAST X=0 by this much, not exactly at X=0 --
@@ -1186,10 +1187,13 @@ flange_seat_x = flange_nut_thickness / 2 + 0.5;
 module dual_thread_screw() {
     translate([0, screw_y, screw_z])
         rotate([0, 90, 0]) {
-            // Right-hand thread: flange_seat_x to half_len (shortened on
-            // its center-side end -- see flange_seat_x above).
+            // Right-hand thread: flange_seat_x to right_thread_end_x
+            // (shortened on its center-side end -- see flange_seat_x
+            // above; extended on its outer end past the claw and knob --
+            // see right_thread_end_x above). One continuous thread, no
+            // plain stub and no peg.
             translate([0, 0, flange_seat_x])
-                ScrewThread(clamp_screw_dia, half_len - flange_seat_x, pitch = clamp_screw_pitch, tooth_angle = 30);
+                ScrewThread(clamp_screw_dia, right_thread_end_x - flange_seat_x, pitch = clamp_screw_pitch, tooth_angle = 30);
             // Left-hand thread: -half_len to flange_seat_x (extended PAST
             // the geometric center, instead of stopping at X=0 -- so the
             // flange's entire seating zone is covered by matching
@@ -1199,13 +1203,6 @@ module dual_thread_screw() {
             mirror([1, 0, 0])
                 translate([0, 0, -half_len])
                     ScrewThread(clamp_screw_dia, half_len + flange_seat_x, pitch = clamp_screw_pitch, tooth_angle = 30);
-            // Plain stub bridging the thread's end to the peg -- without
-            // it the peg is a floating, disconnected fragment (the 2mm
-            // clearance margin above is empty space, not material).
-            translate([0, 0, half_len])
-                cylinder(d = clamp_screw_dia, h = peg_z0 - half_len);
-            translate([-peg_size / 2, -peg_size / 2, peg_z0])
-                cube([peg_size, peg_size, peg_len]);
         }
 }
 
@@ -1272,30 +1269,38 @@ module flange_nut_in_place() {
                 flange_nut();
 }
 
-// Knurled turning knob, printed standalone and glued onto the screw's
-// peg after assembly -- see dual_thread_screw() above for why it can't
-// be fused onto the screw in one print. Socket sized with a small
-// clearance over the peg for glue + an easy press-fit.
-module knob() {
+// Knurled turning knob, printed standalone and threaded onto the screw's
+// +X tip after assembly -- see dual_thread_screw() above for why it can't
+// be fused onto the screw in one print, and why it's a real thread
+// (matching clamp_claw_right()'s own RIGHT-handed cut on this same
+// section, via ScrewHole -- not ScrewHoleMirrored) rather than a glued
+// peg joint. Glue it once fully seated flush against the right claw's
+// outward wall, same as any of this design's other threaded-then-glued
+// joints (flange_nut(), etc.) -- the thread carries the running torque,
+// the glue just keeps it from ever backing off.
+module knob_blank() {
     difference() {
         cylinder(d = knob_dia, h = knob_h, $fn = 48);
         for (a = [0:30:359])
             rotate([0, 0, a])
                 translate([knob_dia / 2 - 0.8, 0, -1])
                     cylinder(d = 2, h = knob_h + 2);
-        translate([-(peg_size + 0.3) / 2, -(peg_size + 0.3) / 2, -1])
-            cube([peg_size + 0.3, peg_size + 0.3, peg_len + 1.5]);
     }
 }
 
-// "full" preview only -- shows the knob glued onto the peg and the
-// flange_nut threaded onto the screw's center, in their assembled
+module knob() {
+    ScrewHole(clamp_screw_dia, knob_h + 1, position = [0, 0, -0.5], pitch = clamp_screw_pitch, tooth_angle = 30, tolerance = thread_tolerance)
+        knob_blank();
+}
+
+// "full" preview only -- shows the knob threaded onto the screw's tip and
+// the flange_nut threaded onto the screw's center, in their assembled
 // positions (not fused -- both are still separate prints).
 module dual_thread_screw_with_knob_preview() {
     dual_thread_screw();
     translate([0, screw_y, screw_z])
         rotate([0, 90, 0])
-            translate([0, 0, peg_z0])
+            translate([0, 0, right_claw_outer_x])
                 knob();
     // Centered on the gap, not flush with one edge -- see
     // flange_nut_in_place() above for why this is factored out into its
