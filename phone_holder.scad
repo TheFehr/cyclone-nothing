@@ -31,7 +31,7 @@ use <lib/threads.scad>
 // pivot pin/collar, the two claws, and the leadscrew are separate, unfused
 // bodies (by design -- print-in-place pivot, screw-adjustable clamp), so
 // it isn't watertight/printable as a single part.
-render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),TEST_flange_fit:Quick fit test — flange_nut + a short thread stub — print this first to check thread_tolerance before the full screw,clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — threads onto the screw's tip, then glued (print this),full:Full assembly (preview only)]
+render_part = "connector"; // [connector:Connector plate only — reference only; base.stl already includes it,base:Connector + arm + pivot pin (print this),clamp_center:Rail + both bearing bosses — no collar (print this),collar_top:Pivot collar top half — screws onto collar_bottom around the pin (print this),collar_bottom:Pivot collar bottom half (print this),flange_nut:Screw retention flange — threads onto the screw's center then glued (print this),TEST_flange_fit:Quick fit test — flange_nut + a short thread stub — print this first to check thread_tolerance before the full screw,TEST_claw_fit:Quick fit test — full-length claw thread bore (no lip/wall) + a matching stub — print this first to check thread_tolerance before a full claw,TEST_pivot_detent:Quick fit test — short shaft + short tube with the pivot detent — print this first to tune the click force before a full pin/collar,clamp_claw_right:Right claw — right-hand thread (print this),clamp_claw_left:Left claw — left-hand thread (print this),screw:Dual-thread leadscrew — no flange or knob (print this),knob:Turning knob — threads onto the screw's tip, then glued (print this),full:Full assembly (preview only)]
 
 /* [Connector] */
 
@@ -80,6 +80,29 @@ pivot_flange_dia = 14; // [8:0.5:24]
 pivot_flange_h = 2.4; // [1.2:0.2:5]
 pivot_collar_dia = 12; // [8:0.5:22]
 pivot_clearance = 0.5; // [0.2:0.05:1]
+
+// Detent so the pivot actually HOLDS portrait/landscape instead of free-
+// spinning under the phone's own weight (real print feedback, 2026-09-01
+// -- pivot_clearance above is a pure running-clearance fit, nothing in
+// this design ever created any resistance at all). A single flexible tab
+// on the collar's own bearing tube, with a small bump on its inner face,
+// riding on the shaft -- pushed outward (flexed) everywhere except at two
+// shallow dimples cut into the shaft 90deg apart, where it relaxes and
+// "clicks" in. No fixed relationship between the collar's own rotation
+// reference and either dimple is needed -- the collar isn't keyed to the
+// pin at assembly (you close the clamshell around the shaft at whatever
+// starting angle), so both detent positions are reached identically by a
+// 90deg swing regardless of where you started, the same swing that
+// already swaps portrait/landscape.
+//
+// UNTESTED. FDM cantilever spring force from CAD alone is notoriously
+// unreliable -- wall thickness accuracy, layer adhesion direction, and
+// material all move it a lot. Print TEST_pivot_detent (a short shaft-and-
+// tab coupon) and adjust detent_bump_h/detent_tab_wall against it before
+// committing to a full pin+collar reprint.
+detent_bump_h = 0.4; // [0.1:0.05:0.8] how far the tab's rest position reaches past the shaft's plain surface -- also the dimples' depth
+detent_tab_wall = 1.2; // [0.6:0.1:2.5] radial thickness of the flexible tab -- thinner flexes more easily but risks snapping instead of springing
+detent_tab_arc = 60; // [30:5:100] degrees of arc the tab spans -- its flex length
 
 // How far the collar extends PAST the shaft's far flange before the rail/
 // claw assembly attaches, measured from where the flange-clearing cap
@@ -181,10 +204,26 @@ clamp_screw_pitch = 2; // [1:0.1:3]
 // past the "looks fine in CAD" nominal fit: FDM holes consistently print
 // undersized and shafts/threads oversized relative to the modeled
 // dimensions, so a clearance that's mathematically correct in the model
-// is routinely too tight in the real part. Re-test with a small printed
-// sample (just a short screw stub + one bearing boss) before committing
-// to the full multi-hour combined print again.
-thread_tolerance = 0.8; // [0.4:0.1:1.5]
+// is routinely too tight in the real part.
+//
+// 0.8 wasn't enough either, for the claws specifically: a real print
+// (2026-09-01, bore axis already vertical -- the orientation that should
+// be least prone to this) still bound up, getting progressively tighter
+// over the screw's travel through the full slider_len engagement, not
+// failing outright at the tip. That symptom (fine near the entrance,
+// worse deeper in) is consistent with small accumulated print
+// imperfections along the thread's length eating into the margin turn by
+// turn, not a single bad turn -- exactly what more radial clearance is
+// for. 1.0 trades some thread engagement depth for it (claw-side internal
+// thread crest radius grows from ~2.30mm to ~2.43mm against the screw's
+// fixed ~3.55mm crest radius -- engagement drops from ~1.25mm to ~1.12mm,
+// still a real functional grip, not a loose slop fit).
+//
+// Re-test with TEST_claw_fit (a full-length slider-block coupon, same
+// engagement length as the real claw, without claw()'s own lip/wall --
+// those only cost print time, not anything relevant to this fit) before
+// committing to a full claw reprint.
+thread_tolerance = 1.0; // [0.4:0.1:1.5]
 
 // Radial clearance between the screw's plain shaft and the bearing
 // bosses' through-bore (center_bearing_and_rail()) -- kept separate from
@@ -463,6 +502,29 @@ module arm() {
 // now replaced by the correct arm_z0-based offset.)
 arm_end = [0, arm_y0 + arm_length * sin(arm_angle), arm_z0 + arm_length * cos(arm_angle)];
 
+// Small 2D helpers for the detent tab/slot/dimples below -- an annular
+// sector (a "pie slice" of a ring), built as an annulus intersected with
+// a wide angular wedge bounded from the origin. Only valid for a1-a0 <
+// 180deg (true for every use here), since the wedge is a plain 3-point
+// triangle from the origin, not a proper arc.
+module annulus_2d(r_in, r_out) {
+    difference() {
+        circle(r = r_out, $fn = 64);
+        circle(r = r_in, $fn = 64);
+    }
+}
+
+module angular_wedge_2d(r_bound, a0, a1) {
+    polygon(points = [[0, 0], [r_bound * cos(a0), r_bound * sin(a0)], [r_bound * cos(a1), r_bound * sin(a1)]]);
+}
+
+module annular_sector_2d(r_in, r_out, a0, a1) {
+    intersection() {
+        annulus_2d(r_in, r_out);
+        angular_wedge_2d(r_out + 1, a0, a1);
+    }
+}
+
 // Fixed side of the print-in-place pivot: a shaft with a retaining flange
 // on each end, rigidly part of the base/arm assembly. Tilted by pivot_tilt
 // on top of the base -90 (see the [Pivot] group comment) so the screen
@@ -476,14 +538,30 @@ arm_end = [0, arm_y0 + arm_length * sin(arm_angle), arm_z0 + arm_length * cos(ar
 // collision, not just an edge case (the arm blocked the clamp at every
 // rotation angle). Offsetting the whole shaft to one side keeps the arm's
 // bulk and the collar's swept volume on separate turf.
+//
+// Also carries the detent's two dimples (see the [Pivot] group comment
+// and pivot_collar_solid()'s detent_tab() below) -- shallow spherical
+// scoops cut into the shaft's own surface, 90deg apart, at the same
+// Z-band as the collar's flexible tab.
+module detent_dimples() {
+    r = pivot_shaft_dia / 2 - detent_bump_h + detent_dimple_r;
+    for (a = [0, 90])
+        translate([r * cos(a), r * sin(a), detent_z0 + detent_tab_thick_z / 2])
+            sphere(r = detent_dimple_r, $fn = 32);
+}
+
 module pivot_pin() {
     translate(arm_end)
-        rotate([-90 + pivot_tilt, 0, 0]) {
-            cylinder(d = pivot_shaft_dia, h = pivot_shaft_len);
-            cylinder(d = pivot_flange_dia, h = pivot_flange_h);
-            translate([0, 0, pivot_shaft_len - pivot_flange_h])
-                cylinder(d = pivot_flange_dia, h = pivot_flange_h);
-        }
+        rotate([-90 + pivot_tilt, 0, 0])
+            difference() {
+                union() {
+                    cylinder(d = pivot_shaft_dia, h = pivot_shaft_len);
+                    cylinder(d = pivot_flange_dia, h = pivot_flange_h);
+                    translate([0, 0, pivot_shaft_len - pivot_flange_h])
+                        cylinder(d = pivot_flange_dia, h = pivot_flange_h);
+                }
+                detent_dimples();
+            }
 }
 
 // Rotating side of the pivot: a collar with clearance around the shaft,
@@ -564,6 +642,50 @@ collar_cap_bore_dia = pivot_flange_dia + 2 * pivot_clearance;
 collar_cap_outer_dia = collar_cap_bore_dia + 19;
 collar_cap_len = pivot_flange_h + 2 * pivot_clearance;
 
+// Detent geometry (see the [Pivot] group comment for the mechanism).
+// Placed in the bearing tube's own free Z-band -- collar_between_len is
+// only 14.2mm at default settings, and collar_tab1 (mid-tube, see
+// collar_tab1_z below) already claims the middle 8mm of it, leaving only
+// ~3mm bands on either side. This sits in the band right before the
+// taper starts, comfortably clear of collar_tab1 on one side and the
+// taper on the other -- both by construction, but a small budget: if
+// collar_between_len shrinks a lot (e.g. from a much longer
+// collar_taper_len), re-check this still fits before trusting it.
+detent_tab_thick_z = 2.5;
+detent_z0 = pivot_flange_h + pivot_clearance + collar_between_len - detent_tab_thick_z - 0.3;
+detent_a0 = 90 - detent_tab_arc / 2;
+detent_a1 = 90 + detent_tab_arc / 2;
+detent_tab_rest_r = pivot_shaft_dia / 2 - detent_bump_h;
+detent_dimple_r = 2.5;
+
+// The slot: strips the tube's normal wall material across the tab's
+// whole arc (from just inside the tab's own rest radius out past the
+// tube's OD) so the tab below has room to exist and to flex outward.
+module detent_slot() {
+    translate([0, 0, detent_z0])
+        linear_extrude(height = detent_tab_thick_z)
+            annular_sector_2d(detent_tab_rest_r - 0.2, pivot_collar_dia / 2 + 1, detent_a0, detent_a1);
+}
+
+// The tab itself: hull() between a THICK end at detent_a0 (matching the
+// tube's own normal wall cross-section exactly, so it blends into the
+// uncut tube with no seam -- same hull()-between-two-cross-sections
+// technique already used for the taper above) and a THIN end at
+// detent_a1 (the actual flexible tip, at its own rest radius -- this IS
+// the bump; no separate bump feature needed, the tip's whole rest
+// position already reaches detent_bump_h past the shaft's plain surface,
+// same depth the dimples are cut to).
+module detent_tab() {
+    hull() {
+        translate([0, 0, detent_z0])
+            linear_extrude(height = detent_tab_thick_z)
+                annular_sector_2d(pivot_shaft_dia / 2 + pivot_clearance, pivot_collar_dia / 2, detent_a0, detent_a0 + 3);
+        translate([0, 0, detent_z0])
+            linear_extrude(height = detent_tab_thick_z)
+                annular_sector_2d(detent_tab_rest_r, detent_tab_rest_r + detent_tab_wall, detent_a1 - 3, detent_a1);
+    }
+}
+
 module pivot_collar_solid() {
     taper_len = collar_taper_len;
     between_len = collar_between_len;
@@ -571,7 +693,9 @@ module pivot_collar_solid() {
     cap_outer_dia = collar_cap_outer_dia;
     cap_len = collar_cap_len;
     translate(arm_end)
-        rotate([-90 + pivot_tilt, 0, 0]) {
+        rotate([-90 + pivot_tilt, 0, 0])
+            difference() {
+                union() {
             translate([0, 0, pivot_flange_h + pivot_clearance])
                 difference() {
                     cylinder(d = pivot_collar_dia, h = between_len);
@@ -720,7 +844,10 @@ module pivot_collar_solid() {
                 translate([-center_gap / 2 - bearing_len - 2, screw_y + clamp_screw_dia / 2 + claw_wall - 1 - 3, boss_bottom - 2 + pivot_shaft_len + pivot_clearance + pivot_standoff])
                     cube([bearing_len + 4, (mount_screw_y + 4 - (screw_y + clamp_screw_dia / 2 + claw_wall) + 1) + 5, (boss_top - boss_bottom) + 0.5]);
             }
-        }
+                    detent_tab();
+                }
+                detent_slot();
+            }
 }
 
 // Split clamshell collar: pivot_collar_solid() cut in half along the
@@ -1354,6 +1481,51 @@ else if (render_part == "TEST_flange_fit") {
     translate([20, 0, 0])
         mirror([1, 0, 0])
             ScrewThread(clamp_screw_dia, 10 * clamp_screw_pitch, pitch = clamp_screw_pitch, tooth_angle = 30);
+}
+else if (render_part == "TEST_claw_fit") {
+    // Fast fit test for the claw's own thread bore -- see thread_tolerance
+    // above for why this exists. Keeps the REAL slider_len engagement
+    // length (not a short generic stub): the reported failure was
+    // progressive tightening over the screw's full travel through the
+    // bore, not a bad fit right at the tip, so a short test wouldn't have
+    // reproduced it. Skips claw()'s own lip/wall -- irrelevant to this
+    // fit, they only cost print time. Print this coupon and the
+    // accompanying stub each with their own thread axis vertical (same
+    // orientation as the real claw/screw) and thread them together before
+    // committing to a full claw reprint.
+    difference() {
+        ScrewHole(clamp_screw_dia, slider_len + 1, position = [-0.5, screw_y, screw_z], rotation = [0, 90, 0], pitch = clamp_screw_pitch, tooth_angle = 30, tolerance = thread_tolerance)
+            slider_body_solid(0);
+        translate([-1, rail_y0 - rail_clearance, rail_z0 - rail_clearance])
+            cube([slider_len + 2, rail_w + 2 * rail_clearance, rail_h + 2 * rail_clearance]);
+    }
+    translate([slider_len / 2, 20, 0])
+        ScrewThread(clamp_screw_dia, slider_len + 6, pitch = clamp_screw_pitch, tooth_angle = 30);
+}
+else if (render_part == "TEST_pivot_detent") {
+    // Fast fit/force test for the pivot detent (see the [Pivot] group
+    // comment) -- a short shaft segment (with both dimples) and a short
+    // tube segment (with the flexible tab), standalone, instead of the
+    // full pin+collar. UNTESTED mechanism -- print both in their natural
+    // orientation (axis vertical), slide the tube over the shaft by hand,
+    // and adjust detent_bump_h/detent_tab_wall/detent_tab_arc and
+    // reprint just this small coupon until the click force feels right
+    // (holds against a light shake, releases without excessive force)
+    // before committing to a full pin+collar reprint.
+    test_len = detent_z0 + detent_tab_thick_z + 5;
+    difference() {
+        cylinder(d = pivot_shaft_dia, h = test_len);
+        detent_dimples();
+    }
+    translate([20, 0, 0]) {
+        difference() {
+            cylinder(d = pivot_collar_dia, h = test_len);
+            translate([0, 0, -1])
+                cylinder(d = pivot_shaft_dia + 2 * pivot_clearance, h = test_len + 2);
+            detent_slot();
+        }
+        detent_tab();
+    }
 }
 else {
     base_assembly();
