@@ -100,7 +100,7 @@ pivot_clearance = 0.5; // [0.2:0.05:1]
 // material all move it a lot. Print TEST_pivot_detent (a short shaft-and-
 // tab coupon) and adjust detent_bump_h/detent_tab_wall against it before
 // committing to a full pin+collar reprint.
-detent_bump_h = 0.4; // [0.1:0.05:0.8] how far the tab's rest position reaches past the shaft's plain surface -- also the dimples' depth
+detent_bump_h = 0.6; // [0.1:0.05:0.8] how far the tab's rest position reaches past the shaft's plain surface -- also the dimples' depth. Bumped from 0.4 (2026-09-02): real TEST_pivot_detent print had too little resistance/held too loosely at 0.4. Re-test with the coupon again before committing to a full pin+collar reprint.
 detent_tab_wall = 1.2; // [0.6:0.1:2.5] radial thickness of the flexible tab -- thinner flexes more easily but risks snapping instead of springing
 detent_tab_arc = 60; // [30:5:100] degrees of arc the tab spans -- its flex length
 
