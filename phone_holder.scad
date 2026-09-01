@@ -1504,17 +1504,25 @@ else if (render_part == "TEST_claw_fit") {
 }
 else if (render_part == "TEST_pivot_detent") {
     // Fast fit/force test for the pivot detent (see the [Pivot] group
-    // comment) -- a short shaft segment (with both dimples) and a short
-    // tube segment (with the flexible tab), standalone, instead of the
-    // full pin+collar. UNTESTED mechanism -- print both in their natural
+    // comment) -- a shaft segment (with both dimples) and a short tube
+    // segment (with the flexible tab), standalone, instead of the full
+    // pin+collar. UNTESTED mechanism -- print both in their natural
     // orientation (axis vertical), slide the tube over the shaft by hand,
     // and adjust detent_bump_h/detent_tab_wall/detent_tab_arc and
     // reprint just this small coupon until the click force feels right
     // (holds against a light shake, releases without excessive force)
     // before committing to a full pin+collar reprint.
+    //
+    // The shaft is deliberately longer than the tube (real feedback,
+    // 2026-09-02: equal lengths left nothing to grip once the tube was
+    // slid fully on) -- test_shaft_extra of bare shaft sticks out past
+    // the tube's own end for a hand-hold while twisting, same as the
+    // real assembly always has (the collar only ever covers part of
+    // pivot_shaft_len's full 30mm, never the whole thing).
     test_len = detent_z0 + detent_tab_thick_z + 5;
+    test_shaft_extra = 25;
     difference() {
-        cylinder(d = pivot_shaft_dia, h = test_len);
+        cylinder(d = pivot_shaft_dia, h = test_len + test_shaft_extra);
         detent_dimples();
     }
     translate([20, 0, 0]) {
