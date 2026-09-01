@@ -1,0 +1,38 @@
+#!/bin/bash
+# Repo-local pre-commit hook for cyclone-nothing.
+#
+# Not invoked directly by git -- core.hooksPath is set globally (see
+# ~/.git-hooks/), and a repo can only have one hooksPath active at a
+# time, so this repo can't just point git at this directory without
+# overriding that global setting for everything else too (including the
+# push-time restriction). Instead ~/.git-hooks/pre-commit is a small,
+# project-agnostic dispatcher: it looks for exactly this file
+# (scripts/git-hooks/<hookname>) in whatever repo you're committing to
+# and runs it if present. That keeps the actual project-specific check
+# versioned here, not living as unexplained content in a global,
+# cross-repo location.
+#
+# Runs scripts/check_render_part.py against the STAGED phone_holder.scad
+# whenever a commit touches it, to catch a comma inside a render_part
+# Customizer option label before it ships -- that comma is the OpenSCAD
+# Customizer's delimiter and silently breaks the dropdown; it has shipped
+# for real twice already (commit 99ffa09, and again 2026-09-01).
+
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+checker="$repo_root/scripts/check_render_part.py"
+[ -f "$checker" ] || exit 0
+
+git diff --cached --name-only | grep -qx "phone_holder.scad" || exit 0
+
+tmp_dir=$(mktemp -d) || exit 0
+trap 'rm -rf "$tmp_dir"' EXIT
+git show :phone_holder.scad >"$tmp_dir/phone_holder.scad" 2>/dev/null || exit 0
+
+if ! python3 "$checker" "$tmp_dir"; then
+  echo "pre-commit: blocked — phone_holder.scad's render_part Customizer dropdown looks broken (see above). Fix it, or bypass with: git commit --no-verify" >&2
+  exit 1
+fi
+
+exit 0
